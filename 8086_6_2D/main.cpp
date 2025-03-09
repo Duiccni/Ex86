@@ -282,7 +282,7 @@ int WINAPI wWinMain(
 		graphics::draw::fill_rect({30, 30}, {53 + font::max_font_dim.x * 4, 50 + font::max_font_dim.y}, halt ? C_green : C_red, screen);
 		font::draw_string({40, 40}, "HALT", C_white, screen);
 
-		font::draw_string(font::draw_string({30, 80}, "Graphic mode: ", C_white, screen),
+		font::draw_string(font::draw_string({30, 110}, "Graphic mode: ", C_white, screen),
 			text_or_graphic_mode ? "Graphic" : "Text", C_lime, screen);
 		
 		font::draw_string(font::draw_string({120, 40}, "Cpu Tick: ", C_white, screen), int_to_hex_buf(tick, 6), C_lime, screen);
