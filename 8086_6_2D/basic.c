@@ -172,7 +172,46 @@ void print_memory(u8 *mem, u32 size, u8 stack) {
 	}
 }
 
+char last_inst_buf[32];
+u8 LI_i = 0;
+
+char *regs[] = {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH", "AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"};
+
+void LI_add_register(u8 reg) {
+	*(u16*)(last_inst_buf + LI_i) = *(u16*)regs[reg];
+	last_inst_buf[LI_i + 2] = ' ';
+	LI_i += 3;
+}
+
+inline void LI_add_name(char a, char b, char c, char d=' ') {
+	last_inst_buf[LI_i] = a;
+	last_inst_buf[LI_i + 1] = b;
+	last_inst_buf[LI_i + 2] = c;
+	last_inst_buf[LI_i + 3] = d;
+	last_inst_buf[LI_i + 4] = ' ';
+	LI_i += 4 + (d != ' ');
+}
+
+inline void LI_add_MOD_RM_start(u8 mod, u8 rm, u8 w) {
+	last_inst_buf[LI_i++] = '[';
+	if (mod == 0b11) return;
+	last_inst_buf[LI_i] = (mod >> 1) | '0';
+	last_inst_buf[LI_i + 1] = (mod & 1) | '0';
+	last_inst_buf[LI_i + 2] = ',';
+	last_inst_buf[LI_i + 3] = (rm >> 2) | '0';
+	last_inst_buf[LI_i + 4] = ((rm >> 1) & 1) | '0';
+	last_inst_buf[LI_i + 5] = (rm & 1) | '0';
+	LI_i += 6;
+}
+
+void hex_to_LI(u32 x, u8 c) {
+loop:
+	last_inst_buf[LI_i++] = to_hex((x >> (--c << 2)) & 0b1111);
+	if (c) goto loop;
+}
+
 inline void *get_register(u8 reg, u8 w) {
+	LI_add_register(reg | (w << 3));
 	return w ? (void*)(cpuw + reg) : (void*)(cpub + decode_reg8(reg));
 }
 
@@ -194,12 +233,20 @@ u32 efficient_address(u8 mod, u8 rm) {
 
 void *get_mod_rm(u8 b, u8 w, u8 seg) {
 	u8 mod = b >> 6, rm = b & 0b111;
+	LI_add_MOD_RM_start(mod, rm, w);
 
 	if (mod == 0b11) return get_register(rm, w);
 
 	u32 addr = efficient_address(mod, rm);
 	if (((seg & 0b100) | EA_BP) == 0b010) seg = SSi;
-	return ram + addr + cpus[seg & 0b11];
+	addr += cpus[seg & 0b11];
+
+	last_inst_buf[LI_i++] = ',';
+	hex_to_LI(addr, 6);
+	last_inst_buf[LI_i] = ']';
+	last_inst_buf[LI_i + 1] = ' ';
+	LI_i += 2;
+	return ram + addr;
 }
 
 #define XCHG(T, a, b) { T _t = a; a = b; b = _t; }
@@ -288,11 +335,14 @@ fn0_16 *fn0s16[8] = {
 	_5_SUB16 // CMP
 };
 
+char *fn0str[8] = { "ADD", "OR ", "ADC", "SBB", "AND", "SUB", "XOR", "CMP" };
+
 #define get_modrm_mid(x) ((x >> 3) & 0b111)
 
 #define stack (cpu.SS + cpu.SP)
 
 inline void push_pop16(u16 *x, u8 b) {
+	LI_add_name('P','O','P','0' | b);
 	if (b) {
 		*x = get16(stack);
 		cpu.SP += 2;
@@ -319,6 +369,7 @@ inline void push_pop16_seg(u8 seg, u8 b) {
 #define ERR_LxS_MOD11 5
 #define ERR_ESC 6
 #define ERR_MOD11 7
+#define ERR_IO_DEF 8
 
 u8 error_no = 0;
 
@@ -340,10 +391,12 @@ inline u8 _conditionCC(u8 cc) {
 
 // use only the first bit
 inline u8 conditionCC(u8 cc) {
-	return _conditionCC(cc >> 1) ^ cc;
+	cc ^= _conditionCC(cc >> 1);
+	return error_no ? 0 : cc;
 }
 
 void proc_fn0(u8 w, void *to, u16 b, u8 fn0) {
+	LI_add_name(fn0str[fn0][0], fn0str[fn0][1], fn0str[fn0][2]);
 	if (w) {
 		u16 a = *(u16*)to;
 		u32 c = fn0s16[fn0](a, b);

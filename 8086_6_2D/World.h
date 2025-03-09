@@ -12,7 +12,7 @@
 #include "3Dmath.h"
 #endif
 
-constexpr point screen_size = { 720 + 420, 540 };
+constexpr point screen_size = { 2240, 560 };
 
 graphics::surface_ex screen = graphics::surface_ex(screen_size);
 

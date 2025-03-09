@@ -14,13 +14,13 @@ u16 (*INio[0x100])();
 
 void default_out(u16 x) {
 	printf("Unk port out: %u\n", IO_port);
-	error_no = ERR_UNUSED;
+	error_no = ERR_IO_DEF;
 	return;
 }
 
 u16 default_in() {
 	printf("Unk port in: %u\n", IO_port);
-	error_no = ERR_UNUSED;
+	error_no = ERR_IO_DEF;
 	return 0;
 }
 
@@ -47,8 +47,8 @@ void interrupt(u8 i) {
 u8 halt = 0;
 u32 tick = 0;
 
-u16 IP_pre1 = 0;
-u16 IP_pre2 = 0;
+u32 PC_pre1 = 0;
+u32 PC_pre2 = 0;
 
 void tick_cpu() {
 	u8 seg_or = DSi, opcode, masked, w;
@@ -104,6 +104,7 @@ tick_cpu:
 	// 0000 0001
 	switch (opcode & 0xFE) {
 	case 0xE8: {
+		LI_add_name('J','M','P','i');
 		u16 inc16 = fetch16();
 		if (!w) {
 			cpu.SP -= 2;
@@ -425,10 +426,14 @@ tick_cpu:
 		return;
 	}
 	case 0xB0:
+		LI_add_name('M','O','V','i');
+		LI_add_register(opcode & 0b111);
 		opcode &= 0b111;
 		cpub[decode_reg8(opcode)] = fetch8;
 		return;
 	case 0xB8:
+		LI_add_name('M','O','V','i');
+		LI_add_register(opcode & 0b1111);
 		cpuw[opcode & 0b111] = fetch16();
 		return;
 	case 0xD8: error_no = ERR_ESC; return; // ESC | FPU
@@ -437,6 +442,7 @@ tick_cpu:
 	// 0000 1111
 	switch (opcode & 0xF0) {
 	case 0x40: {
+		LI_add_name('I','N','C', to_hex(opcode & 0b1111));
 		u8 reg = opcode & 0b111;
 		u16 a = cpuw[reg], b = get_sign16(opcode << 12);
 		u32 c = a + b;
@@ -500,6 +506,7 @@ tick_cpu:
 			return;
 		}
 		case 0b1000: {
+			LI_add_name('M','O','V', '0' | nd);
 			void *from = get_register(mid, w);
 			if (nd) XCHG(void*, to, from);
 
@@ -512,6 +519,8 @@ tick_cpu:
 	}
 	}
 
+#define SET_FLAGv(x) (((x) & 0b11010101) | 2)
+
 	switch (opcode) {
 	case 0x98: cpu.A.x = (i8)cpu.A.l; return; // CBW
 	case 0x99: cpu.D.x = sign_mask16(cpu.A.x); return; // CWD
@@ -522,7 +531,7 @@ tick_cpu:
 	case 0xCF: // IRET
 		cpu.IP = get16(stack);
 		cpu.CS = get16(stack + 2) << 4;
-		cpu.flags = get16(stack + 4);
+		cpu.flags = SET_FLAGv(get16(stack + 4));
 		cpu.SP += 6;
 		return;
 
@@ -537,7 +546,7 @@ tick_cpu:
 		return;
 	}
 
-	case 0x9E: *(u8*)&cpu.flags = cpu.A.h; return; // SAHF
+	case 0x9E: *(u8*)&cpu.flags = SET_FLAGv(cpu.A.h); return; // SAHF
 	case 0x9F: cpu.A.h = *(u8*)&cpu.flags; return; // LAHF
 
 	case 0xF4: halt = 1; return;
@@ -578,17 +587,21 @@ tick_cpu:
 }
 
 void tick_cpu2() {
-	if (halt == 0) {
-		IP_pre2 = IP_pre1;
-		IP_pre1 = cpu.IP;
-		tick++;
-		tick_cpu();
-		if (error_no) {
-			halt = 1;
-			printf("Error: %u\n", error_no);
-		}
+	if (halt) {
+		halt = error_no = 0;
+		return;
 	}
 
+	LI_i = 0;
+	PC_pre2 = PC_pre1;
+	PC_pre1 = PC;
+	tick++;
+	tick_cpu();
+	if (error_no) {
+		halt = 1;
+		printf("\nError: %u\n", error_no);
+	}
+	last_inst_buf[LI_i] = 0;
 }
 
 #define push(x) ram[pc++] = x;

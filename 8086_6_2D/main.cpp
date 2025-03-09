@@ -49,6 +49,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT u_msg, WPARAM w_param, LPARAM l_par
 }
 
 char itb_buffer[17];
+
 char* int_to_binary_buf(u16 x, u8 c) {
 	u8 i = 0;
 loop:
@@ -85,19 +86,25 @@ void print_register(char* name, u16 x, point pos) {
 	font::draw_string(pos, ")", C_white, screen);
 }
 
+u8 text_or_graphic_mode = 1;
+void OUT_graphic_module(u16 al) {
+	text_or_graphic_mode = al & 1;
+}
+
 #define VGA_X 320
 #define VGA_Y 200
 
 #define VGA_Xs (VGA_X * 2)
 #define VGA_Ys (VGA_Y * 2)
+#define VGA_BL_X 480
+#define VGA_BR_X VGA_BL_X + VGA_Xs
 
-constexpr int VGA_BL_X = screen_size.x - 30 - VGA_Xs;
-void VGA() {	
-	graphics::draw::_straight_line(VGA_BL_X - 1, VGA_BL_X + VGA_Xs + 1, 29, false, C_white, screen);
-	graphics::draw::_straight_line(VGA_BL_X - 1, VGA_BL_X + VGA_Xs + 1, 30 + VGA_Ys, false, C_white, screen);
+void VGA() {
+	graphics::draw::_straight_line(VGA_BL_X - 1, VGA_BR_X + 1, 29, false, C_white, screen);
+	graphics::draw::_straight_line(VGA_BL_X - 1, VGA_BR_X + 1, 30 + VGA_Ys, false, C_white, screen);
 
 	graphics::draw::_straight_line(30, 30 + VGA_Ys, VGA_BL_X - 1, true, C_white, screen);
-	graphics::draw::_straight_line(30, 30 + VGA_Ys, VGA_BL_X + VGA_Xs, true, C_white, screen);
+	graphics::draw::_straight_line(30, 30 + VGA_Ys, VGA_BR_X, true, C_white, screen);
 
 	u8 *px = ram + 0xA0000;
 	for (int y = VGA_Ys; y;) {
@@ -112,6 +119,16 @@ void VGA() {
 			graphics::set_sure_pixel(p + P(1, 1), c, screen);
 		}
 	}
+}
+
+#define TB_L_X VGA_BR_X + 30
+#define TB_T_Y (screen_size.y - 30)
+void text_box() {
+	graphics::draw::fill_rect({TB_L_X, TB_T_Y + 20}, {TB_L_X + 1040, TB_T_Y - 500 + 20}, 0x30, screen);
+	u8 *ch = ram + 0xB8000;
+	for (u8 y = 0; y < 25; y++)
+		for (u8 x = 0; x < 80; x++, ch += 2)
+			font::unsafe_draw_char(ch[0], {TB_L_X + x * font::mfdim_xinc, TB_T_Y - y * 20}, (ch[1] << 4) | 0xFF0000, screen);
 }
 
 int WINAPI wWinMain(
@@ -145,7 +162,8 @@ int WINAPI wWinMain(
 		wc.lpszClassName,
 		wc.lpszClassName,
 		WS_SYSMENU | WS_CAPTION | WS_MINIMIZEBOX,
-		CW_USEDEFAULT, CW_USEDEFAULT,
+		30, 30,
+		// CW_USEDEFAULT, CW_USEDEFAULT,
 		screen_size.x + extra_size.x, screen_size.y + extra_size.y,
 		nullptr, nullptr, hInstance, nullptr
 	);
@@ -193,7 +211,10 @@ int WINAPI wWinMain(
 
 	reset_cpu();
 	initalize_IO();
+	OUTio[0xD8] = &OUT_graphic_module; // 3D8h (mod 0x100)
+	last_inst_buf[0] = 0;
 
+	/*
 	u32 pc = 0xFFFF0;
 #define push(x) ram[pc++] = x;
 
@@ -222,6 +243,27 @@ int WINAPI wWinMain(
 	push(0xE9); // jmp loop
 	push(0xF5);
 	push(0xFF);
+	*/
+
+{
+	FILE *IBM_5160_bios = fopen("BIOS_5160_09MAY86_U19_62X0819_68X4370_27256_F000.BIN","rb");
+	fread(ram + 0xF0000, 1, KB * 32, IBM_5160_bios);
+	fclose(IBM_5160_bios);
+
+	IBM_5160_bios = fopen("BIOS_5160_09MAY86_U18_59X7268_62X0890_27256_F800.BIN","rb");
+	fread(ram + 0xF8000, 1, KB * 32, IBM_5160_bios);
+	fclose(IBM_5160_bios);
+	
+	system("pause");
+}
+
+/*
+{
+	FILE *test = fopen("test.bin","rb");
+	fread(ram + 0xFFFF0, 1, 100, test);
+	fclose(test);
+}
+*/
 
 #pragma region
 	while (data::running)
@@ -239,34 +281,50 @@ int WINAPI wWinMain(
 
 		graphics::draw::fill_rect({30, 30}, {53 + font::max_font_dim.x * 4, 50 + font::max_font_dim.y}, halt ? C_green : C_red, screen);
 		font::draw_string({40, 40}, "HALT", C_white, screen);
+
+		font::draw_string(font::draw_string({30, 80}, "Graphic mode: ", C_white, screen),
+			text_or_graphic_mode ? "Graphic" : "Text", C_lime, screen);
 		
 		font::draw_string(font::draw_string({120, 40}, "Cpu Tick: ", C_white, screen), int_to_hex_buf(tick, 6), C_lime, screen);
 
+		font::draw_string({30, 80}, last_inst_buf, C_green, screen);
+
+	{
 		for (u8 i = 0; i < 8; i++)
-			print_register(register_names[i], cpuw[i], { 30, (screen_size.y - 40) - (font::max_font_dim.y + 3) * (i + (i >> 2)) });
+			print_register(register_names[i], cpuw[i],
+				{ 30, (screen_size.y - 40) - (font::max_font_dim.y + 3) * (i + (i >> 2)) });
 
 		for (u8 i = 0; i < 4; i++)
-			print_register(register_names[i + 8], cpus[i] >> 4, { 30, (screen_size.y - 40 - (font::max_font_dim.y + 3) * 10) - (font::max_font_dim.y + 3) * i });
+			print_register(register_names[i + 8], cpus[i] >> 4,
+				{ 30, (screen_size.y - 40 - (font::max_font_dim.y + 3) * 10) - (font::max_font_dim.y + 3) * i });
 
 		for (u8 i = 0; i < 2; i++)
-			print_register(register_names[i + 12], (&cpu.IP)[i], { 30, (screen_size.y - 40 - (font::max_font_dim.y + 3) * 15) - (font::max_font_dim.y + 3) * i });
+			print_register(register_names[i + 12], (&cpu.IP)[i],
+			{ 30, (screen_size.y - 40 - (font::max_font_dim.y + 3) * 15) - (font::max_font_dim.y + 3) * i });
+	}
 		
 		font::draw_string({ 30 + font::mfdim_xinc * 11, screen_size.y - 40 - (font::max_font_dim.y + 3) * 17 },
 			"ODIT SZ     C", C_cyan, screen);
 
 		VGA();
+		text_box();
 
 		if ((data::tick & 0b1111) == 0 && halt == 0) {
 			system("cls");
-			printf("Tick: %u\n\n0xFFFF0:", data::tick);
-			for (u32 i = 0; i < 0x200; ++i) {
-				if ((i & 31) == 0) printf("\n%04X: ", i);
-				if (i == cpu.IP) putsout("\033[41m");
-				else if (i == IP_pre1) putsout("\033[42m");
-				else if (i == IP_pre2) putsout("\033[43m");
-				f_print_byte_hex(ram[i + 0xFFFF0]);
+
+			u32 pc = PC, addr = (pc & ~0b111111) - 0x20;
+			printf("Tick: %u\n\n0x%X:", data::tick, addr);
+			for (int i = 0; i < 0x100; ++i, ++addr) {
+				if ((i & 0b1111) == 0) printf("\n%04X: ", i);
+
+				if (addr == pc) putsout("\033[41m");
+				else if (addr == PC_pre1) putsout("\033[42m");
+				else if (addr == PC_pre2) putsout("\033[43m");
+
+				f_print_byte_hex(ram[addr]);
 				putsout(" \033[0m");
 			}
+
 			putsout("\n\n0x00000:");
 			print_memory(ram, 0x200, 5);
 		}
