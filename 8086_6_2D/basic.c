@@ -10,6 +10,8 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 
+#define if_error(con, err) if (con) { error_no = err; return; }
+
 #define sign_mask8(x) ((i8)(x) >> 7)
 #define sign_mask16(x) ((i16)(x) >> 15)
 
@@ -216,9 +218,9 @@ inline void *get_register(u8 reg, u8 w) {
 }
 
 u8 EA_BP = 0;
-u32 efficient_address(u8 mod, u8 rm) {
+u16 efficient_address(u8 mod, u8 rm) {
 	EA_BP = 0;
-	u32 addr = mod == 1 ? fetch8 : (mod ? fetch16() : 0);
+	u16 addr = mod == 1 ? (i8)fetch8 : (mod ? fetch16() : 0);
 
 	if (~rm & 0b110) {
 		addr += (&cpu.SI)[rm & 1];
@@ -352,16 +354,6 @@ inline void push_pop16(u16 *x, u8 b) {
 	}
 }
 
-inline void push_pop16_seg(u8 seg, u8 b) {
-	if (b) {
-		cpus[seg] = get16(stack) << 4;
-		cpu.SP += 2;
-	} else {
-		cpu.SP -= 2;
-		get16(stack) = cpus[seg] >> 4;
-	}
-}
-
 #define ERR_BCD 1
 #define ERR_UNUSED 2
 #define ERR_LEA_MOD11 3
@@ -370,8 +362,22 @@ inline void push_pop16_seg(u8 seg, u8 b) {
 #define ERR_ESC 6
 #define ERR_MOD11 7
 #define ERR_IO_DEF 8
+#define ERR_POP_CS 9
+#define ERR_UNK_FLOPPY 10
 
 u8 error_no = 0;
+
+inline void push_pop16_seg(u8 seg, u8 b) {
+	LI_add_name('P','O','P','S');
+	if (b) {
+		if_error(seg == 1, ERR_POP_CS);
+		cpus[seg] = get16(stack) << 4;
+		cpu.SP += 2;
+	} else {
+		cpu.SP -= 2;
+		get16(stack) = cpus[seg] >> 4;
+	}
+}
 
 // use only the first bit
 inline u8 _conditionCC(u8 cc) {
@@ -392,6 +398,8 @@ inline u8 _conditionCC(u8 cc) {
 // use only the first bit
 inline u8 conditionCC(u8 cc) {
 	cc ^= _conditionCC(cc >> 1);
+	last_inst_buf[LI_i++] = 'J';
+	last_inst_buf[LI_i++] = (cc & 1) | '0';
 	return error_no ? 0 : cc;
 }
 

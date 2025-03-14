@@ -1,10 +1,25 @@
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
+
 #define _INCLUDE_3DH 0
 
 #include "World.h"
 
 #include "mainx86.c"
 
-LRESULT CALLBACK window_proc(HWND hwnd, UINT u_msg, WPARAM w_param, LPARAM l_param)
+void dump_ram() {
+	FILE *binary = fopen("RAM_dump.bin","wb");
+	if (binary == NULL) {
+		MessageBoxA(NULL, "failed to open ram dump file to write", "sex!!!", MB_ICONERROR);
+		data::running = false;
+		return;
+	}
+
+	fwrite(ram, 1, MB, binary);
+	fclose(binary);
+}
+
+LRESULT window_proc(HWND hwnd, UINT u_msg, WPARAM w_param, LPARAM l_param)
 {
 	switch (u_msg)
 	{
@@ -34,17 +49,28 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT u_msg, WPARAM w_param, LPARAM l_par
 		data::mouse.right = false;
 		return 0;
 	case WM_KEYDOWN:
-		if (w_param == VK_SPACE) {
+		if (w_param == VK_F3) {
 			tick_cpu2();
 			return 0;
 		}
-		if (w_param == VK_F1) {
-			for (int i = 0; i < 1000; i++)
+		if (w_param == VK_F4) {
+			halt = error_no = 0;
+			return 0;
+		}
+		if (w_param == VK_F5) {
+			dump_ram();
+			return 0;
+		}
+		if (w_param == VK_F6) {
+			for (u8 i = 0; i < 0x10; i++)
 				tick_cpu2();
 			return 0;
 		}
+
+		last_key_pressed = w_param;
+		last_key_press_tick = tick;
 	default:
-		return DefWindowProcW(hwnd, u_msg, w_param, l_param);
+		return DefWindowProc(hwnd, u_msg, w_param, l_param);
 	}
 }
 
@@ -78,17 +104,12 @@ char* register_names[14] = {
 void print_register(char* name, u16 x, point pos) {
 	pos = font::draw_string(pos, name, C_white, screen);
 	pos = font::draw_string(pos, ": ", C_white, screen);
-	pos = font::draw_string(pos, int_to_binary_buf(x >> 8, 8), 0xFF4080, screen);
+	pos = font::draw_string(pos, int_to_binary_buf(x >> 8, 8), 0xC0C0FF, screen);
 	pos = font::draw_string(pos, " ", 0xFF4080, screen);
-	pos = font::draw_string(pos, int_to_binary_buf(x, 8), 0xFF4080, screen);
+	pos = font::draw_string(pos, int_to_binary_buf(x, 8), 0xFFC0C0, screen);
 	pos = font::draw_string(pos, " (#", C_white, screen);
 	pos = font::draw_string(pos, int_to_hex_buf(x, 4), 0xFF4080, screen);
 	font::draw_string(pos, ")", C_white, screen);
-}
-
-u8 text_or_graphic_mode = 1;
-void OUT_graphic_module(u16 al) {
-	text_or_graphic_mode = al & 1;
 }
 
 #define VGA_X 320
@@ -123,18 +144,38 @@ void VGA() {
 
 #define TB_L_X VGA_BR_X + 30
 #define TB_T_Y (screen_size.y - 30)
+
+#define TEXT_MODE_X 80
+#define TEXT_MODE_Y 25
+
 void text_box() {
 	graphics::draw::fill_rect({TB_L_X, TB_T_Y + 20}, {TB_L_X + 1040, TB_T_Y - 500 + 20}, 0x30, screen);
 	u8 *ch = ram + 0xB8000;
-	for (u8 y = 0; y < 25; y++)
-		for (u8 x = 0; x < 80; x++, ch += 2)
+	for (u8 y = 0; y < TEXT_MODE_Y; y++)
+		for (u8 x = 0; x < TEXT_MODE_X; x++, ch += 2)
 			font::unsafe_draw_char(ch[0], {TB_L_X + x * font::mfdim_xinc, TB_T_Y - y * 20}, (ch[1] << 4) | 0xFF0000, screen);
 }
 
-int WINAPI wWinMain(
+void load_whole_file(char* name, u8* ptr) {
+	FILE *binary = fopen(name,"rb");
+	if (binary == NULL) {
+		MessageBoxA(NULL, "failed to open whole file", name, MB_ICONERROR);
+		data::running = false;
+		return;
+	}
+
+	fseek(binary, 0, SEEK_END);
+	u32 file_size = ftell(binary);
+	fseek(binary, 0, SEEK_SET);
+
+	fread(ptr, 1, file_size, binary);
+	fclose(binary);
+}
+
+int WINAPI WinMain(
 	HINSTANCE hInstance,
 	HINSTANCE hPrevInstance,
-	LPWSTR lpCmdLine,
+	LPSTR lpCmdLine,
 	int nShowCmd
 )
 {
@@ -142,22 +183,23 @@ int WINAPI wWinMain(
 	graphics::init();
 	if (font::init())
 	{
-		MessageBoxW(nullptr, L"'font.bin' file cant found!", L"Error", MB_OK);
+		MessageBox(nullptr, "'font.bin' file cant found!", "Error", MB_OK);
 		return 0;
 	}
 
-	WNDCLASSW wc = {};
+	WNDCLASS wc = {};
 	wc.lpfnWndProc = window_proc;
+	wc.hIcon = LoadIcon(NULL, IDI_SHIELD);
 	wc.hInstance = hInstance;
-	wc.lpszClassName = L"6.1";
+	wc.lpszClassName = "hii";
 
-	if (!RegisterClassW(&wc))
+	if (!RegisterClass(&wc))
 	{
-		MessageBoxW(nullptr, L"Failed to register Window Class!", L"Error", MB_OK);
+		MessageBox(nullptr, "Failed to register Window Class!", "Error", MB_OK);
 		return 0;
 	}
 
-	HWND window = CreateWindowExW(
+	HWND window = CreateWindowEx(
 		0,
 		wc.lpszClassName,
 		wc.lpszClassName,
@@ -168,11 +210,13 @@ int WINAPI wWinMain(
 		nullptr, nullptr, hInstance, nullptr
 	);
 
+	SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+
 	if (window == nullptr)
 	{
-		UnregisterClassW(wc.lpszClassName, hInstance);
+		UnregisterClass(wc.lpszClassName, hInstance);
 
-		MessageBoxW(nullptr, L"Failed to create Window!", L"Error", MB_OK);
+		MessageBox(nullptr, "Failed to create Window!", "Error", MB_OK);
 		return 0;
 	}
 
@@ -196,7 +240,7 @@ int WINAPI wWinMain(
 
 		HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
-		SMALL_RECT windowSize = { 0, 0, 108, 38 };
+		SMALL_RECT windowSize = { 0, 0, 60, 38 };
 		SetConsoleWindowInfo(hConsole, TRUE, &windowSize);
 	}
 
@@ -207,89 +251,63 @@ int WINAPI wWinMain(
 // cd c:\"Program Files"\LLVM\bin
 // .\clang.exe C:\Users\abi37\Documents\Projects\8086_6_2D\main.cpp -O -o C:\Users\abi37\Documents\Projects\8086_6_2D\test.exe
 
+	puts("F3: Tick\nF4: Stop Halt\nF5: Dump RAM\nF6: Tick 16 time");
+	halt = 1;
+
 	ram = (u8*)malloc(MB);
+	floppies[0] = (u8*)malloc(HEADS * CYLINDERS * SECTORS * SECTOR_SIZE); // 1440KB
+	// floppies[1] = (u8*)malloc(HEADS * CYLINDERS * SECTORS * SECTOR_SIZE); // 1440KB
 
 	reset_cpu();
 	initalize_IO();
-	OUTio[0xD8] = &OUT_graphic_module; // 3D8h (mod 0x100)
 	last_inst_buf[0] = 0;
 
-	/*
+{
+	load_whole_file("asm/mybios.bin", ram + 0xF0000);
+	load_whole_file("asm/int10h.bin", ram + 0xF0100);
+	load_whole_file("asm/int13h.bin", ram + 0xF0200);
+	load_whole_file("asm/int16h.bin", ram + 0xF0300);
+	load_whole_file("asm/x86BOOT.img", floppies[0]);
+}
 	u32 pc = 0xFFFF0;
 #define push(x) ram[pc++] = x;
 
-	push(0xB8); // mov ax, 0xA000
+	push(0xEA);
 	push(0x00);
-	push(0xA0);
-
-	push(0x8E); // mov ds, ax
-	push(0xD8);
-
-	push(0xB1); // mov cl, 7
-	push(0x07);
-
-	push(0x89); // mov ax, bx
-	push(0xD8);
-
-	push(0xD3); // shr ax, cl
-	push(0xE8);
-
-	push(0x3E); // mov BYTE ds:[bx], al
-	push(0x88);
-	push(0x07);
-
-	push(0x43); // inc bx
-
-	push(0xE9); // jmp loop
-	push(0xF5);
-	push(0xFF);
-	*/
-
-{
-	FILE *IBM_5160_bios = fopen("BIOS_5160_09MAY86_U19_62X0819_68X4370_27256_F000.BIN","rb");
-	fread(ram + 0xF0000, 1, KB * 32, IBM_5160_bios);
-	fclose(IBM_5160_bios);
-
-	IBM_5160_bios = fopen("BIOS_5160_09MAY86_U18_59X7268_62X0890_27256_F800.BIN","rb");
-	fread(ram + 0xF8000, 1, KB * 32, IBM_5160_bios);
-	fclose(IBM_5160_bios);
-	
-	system("pause");
-}
-
-/*
-{
-	FILE *test = fopen("test.bin","rb");
-	fread(ram + 0xFFFF0, 1, 100, test);
-	fclose(test);
-}
-*/
+	push(0x00);
+	push(0x00);
+	push(0xF0);
 
 #pragma region
 	while (data::running)
 	{
 		start_time = timeGetTime();
-		while (PeekMessageW(&msg, window, 0, 0, PM_REMOVE))
+		while (PeekMessage(&msg, window, 0, 0, PM_REMOVE))
 		{
 			TranslateMessage(&msg);
-			DispatchMessageW(&msg);
+			DispatchMessage(&msg);
 		}
 
 		update_mouse(window);
 
 		C_black >> screen;
 
+		graphics::draw::fill_rect({30, 110}, {53 + font::max_font_dim.x, 130 + font::max_font_dim.y},
+			last_key_press_tick == tick ? C_green : C_red, screen);
+		font::unsafe_draw_char(last_key_pressed, {40, 120}, C_white, screen);
+		font::draw_string({75, 120}, int_to_hex_buf(last_key_pressed, 2), C_white, screen);
+
 		graphics::draw::fill_rect({30, 30}, {53 + font::max_font_dim.x * 4, 50 + font::max_font_dim.y}, halt ? C_green : C_red, screen);
 		font::draw_string({40, 40}, "HALT", C_white, screen);
 
-		font::draw_string(font::draw_string({30, 110}, "Graphic mode: ", C_white, screen),
-			text_or_graphic_mode ? "Graphic" : "Text", C_lime, screen);
+		// font::draw_string(font::draw_string({30, 110}, "Graphic mode: ", C_white, screen),
+		//  text_or_graphic_mode ? "Graphic" : "Text", C_lime, screen);
 		
 		font::draw_string(font::draw_string({120, 40}, "Cpu Tick: ", C_white, screen), int_to_hex_buf(tick, 6), C_lime, screen);
 
 		font::draw_string({30, 80}, last_inst_buf, C_green, screen);
 
-	{
+	{ // Registers
 		for (u8 i = 0; i < 8; i++)
 			print_register(register_names[i], cpuw[i],
 				{ 30, (screen_size.y - 40) - (font::max_font_dim.y + 3) * (i + (i >> 2)) });
@@ -312,7 +330,7 @@ int WINAPI wWinMain(
 		if ((data::tick & 0b1111) == 0 && halt == 0) {
 			system("cls");
 
-			u32 pc = PC, addr = (pc & ~0b111111) - 0x20;
+			u32 pc = PC, addr = pc < 0x20 ? pc : (pc & ~0b111111) - 0x20;
 			printf("Tick: %u\n\n0x%X:", data::tick, addr);
 			for (int i = 0; i < 0x100; ++i, ++addr) {
 				if ((i & 0b1111) == 0) printf("\n%04X: ", i);
@@ -325,8 +343,10 @@ int WINAPI wWinMain(
 				putsout(" \033[0m");
 			}
 
-			putsout("\n\n0x00000:");
-			print_memory(ram, 0x200, 5);
+			u32 st = stack & ~0b111111;
+			if (st >= 0x20) st -= 0x20;
+			printf("\n\n0x%05X:", st);
+			print_memory(ram + st, 0x100, 4);
 		}
 
 		StretchDIBits(
@@ -351,7 +371,7 @@ int WINAPI wWinMain(
 
 	ReleaseDC(window, hdc);
 	DestroyWindow(window);
-	UnregisterClassW(wc.lpszClassName, hInstance);
+	UnregisterClass(wc.lpszClassName, hInstance);
 
 	if constexpr (CONSOLE)
 	{
@@ -360,6 +380,8 @@ int WINAPI wWinMain(
 	}
 
 	free(ram);
+	free(floppies[0]);
+	// free(floppies[1]);
 
 	free(screen.buffer);
 	screen.buffer = nullptr;

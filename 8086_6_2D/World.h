@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef UNICODE
+#undef UNICODE
+#endif
+
 #include <Windows.h>
 
 #pragma comment(lib, "Winmm.lib")

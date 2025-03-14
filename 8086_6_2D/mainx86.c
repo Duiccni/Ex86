@@ -1,6 +1,5 @@
 #include "basic.c"
-
-#define if_error(con, err) if (con) { error_no = err; return; }
+#include <string.h>
 
 u8 CIDf[3] = {CFi, IFi, DFi};
 
@@ -15,7 +14,6 @@ u16 (*INio[0x100])();
 void default_out(u16 x) {
 	printf("Unk port out: %u\n", IO_port);
 	error_no = ERR_IO_DEF;
-	return;
 }
 
 u16 default_in() {
@@ -24,11 +22,54 @@ u16 default_in() {
 	return 0;
 }
 
+u8 halt = 0;
+u32 tick = 0;
+
+u32 PC_pre1 = 0;
+u32 PC_pre2 = 0;
+
+#define SECTOR_SIZE 512
+#define HEADS 2
+#define CYLINDERS 80
+#define SECTORS 18
+
+#define FLOPPY_AMOUNT 1
+u8* floppies[FLOPPY_AMOUNT];
+
+u32 get_floppy_index() {
+	u8 sector = cpu.C.l & 0b111111;
+	u16 cylinder = cpu.C.x >> 6;
+	return ((cpu.D.h * CYLINDERS + cylinder) * SECTORS + sector) * SECTOR_SIZE;
+}
+
+u16 read_sectors_in() {
+	halt = 1;
+	u32 to = cpu.ES + cpu.B.x, from = get_floppy_index();
+	printf("\nRead from floppy%u:\n From: #%X\n To: #%X\n Size: %u * 512\n", cpu.D.l, from, to, cpu.A.l);
+	if (cpu.D.l >= FLOPPY_AMOUNT) {
+		error_no = ERR_UNK_FLOPPY;
+		return 1;
+	}
+	memcpy(ram + to, floppies[cpu.D.l] + from, cpu.A.l * SECTOR_SIZE);
+	return 0;
+}
+
+u8 last_key_pressed = 0;
+u16 last_key_press_tick = -1;
+u16 get_key_in() {
+	printf("\nHalt bcuz of 'in 0' (get the last key input from keyboard).\n");
+	halt = 1;
+	return last_key_pressed;
+}
+
 void initalize_IO() {
 	for (u16 i = 0; i < 0x100; i++) {
 		OUTio[i] = default_out;
 		INio[i] = default_in;
 	}
+
+	INio[0] = get_key_in;
+	INio[1] = read_sectors_in;
 }
 
 void interrupt(u8 i) {
@@ -39,17 +80,12 @@ void interrupt(u8 i) {
 	cpu.SP -= 6;
 	get16(stack) = cpu.IP;
 
-	i <<= 2;
-	cpu.IP = get16(i);
-	cpu.CS = get16(i + 2) << 4;
+	u16 a = i << 2;
+	cpu.IP = get16(a);
+	cpu.CS = get16(a + 2) << 4;
 }
 
-u8 halt = 0;
-u32 tick = 0;
-
-u32 PC_pre1 = 0;
-u32 PC_pre2 = 0;
-
+#define SET_FLAGv(x) (((x) & 0b11010101) | 2)
 void tick_cpu() {
 	u8 seg_or = DSi, opcode, masked, w;
 tick_cpu:
@@ -244,7 +280,17 @@ tick_cpu:
 		cpu.IP = *(u16*)rm;
 		return;
 	}
-	case 0x9C: { return push_pop16(&cpu.flags, w); }
+	case 0x9C: {
+		LI_add_name('P','O','P','f');
+		if (w) {
+			cpu.flags = SET_FLAGv(get16(stack));
+			cpu.SP += 2;
+		} else {
+			cpu.SP -= 2;
+			get16(stack) = cpu.flags;
+		}
+		return;
+	}
 	case 0xF0:
 	case 0xC0:
 	case 0xC8: { error_no = ERR_UNUSED; return; }
@@ -287,13 +333,13 @@ tick_cpu:
 	case 0xA0: {
 		void *to = &cpu.A, *from = cpus[seg_or & 0b11] + fetch16() + ram;
 		if (opcode & 2) XCHG(void*, to, from);
-		if (w) *(u8*)to = *(u8*)from;
-		else *(u16*)to = *(u16*)from;
+		if (w) *(u16*)to = *(u16*)from;
+		else *(u8*)to = *(u8*)from;
 		return;
 	}
 	case 0xA4: {
 		void *to = cpu.ES + cpu.DI + ram, *from = cpu.DS + cpu.SI + ram;
-		switch (opcode & 2) {
+		switch (opcode & 0b11) {
 		case 0b00: *(u8*)to = *(u8*)from; break;
 		case 0b01: *(u16*)to = *(u16*)from; break;
 		case 0b10: cmp8(*(u8*)to, *(u8*)from); break;
@@ -382,6 +428,7 @@ tick_cpu:
 		}
 	}
 	case 0xE0: {
+		cpu.C.x--;
 		cpu.IP++;
 		switch (opcode) {
 		case 0xE0: if (cpu.C.x && !get_fbit(ZFi)) break; return;
@@ -519,8 +566,6 @@ tick_cpu:
 	}
 	}
 
-#define SET_FLAGv(x) (((x) & 0b11010101) | 2)
-
 	switch (opcode) {
 	case 0x98: cpu.A.x = (i8)cpu.A.l; return; // CBW
 	case 0x99: cpu.D.x = sign_mask16(cpu.A.x); return; // CWD
@@ -560,6 +605,21 @@ tick_cpu:
 	case 0xEB: cpu.IP += (i8)fetch8; return;
 
 	case 0xF2: {
+	repnz_loop:
+		if (cpu.C.x == 0) {
+			set_fbit(ZFi, 1);
+			cpu.IP++;
+			return;
+		}
+		tick_cpu();
+		cpu.C.x--;
+		if (get_fbit(ZFi)) return;
+		cpu.IP--;
+		goto repnz_loop;
+	}
+	case 0xF3: {
+		// cmpsW & scasW
+		if ((ram[cpu.CS + cpu.IP] & ~0b1001) == 0xA6) goto repz_loop;
 	rep_loop:
 		if (cpu.C.x == 0) {
 			set_fbit(ZFi, 1);
@@ -569,9 +629,7 @@ tick_cpu:
 		tick_cpu();
 		cpu.C.x--, cpu.IP--;
 		goto rep_loop;
-	}
-	case 0xF3: {
-	repe_loop:
+	repz_loop:
 		if (cpu.C.x == 0) {
 			set_fbit(ZFi, 1);
 			cpu.IP++;
@@ -579,18 +637,15 @@ tick_cpu:
 		}
 		tick_cpu();
 		cpu.C.x--;
-		if (!get_fbit(ZFi)) return;
+		if (get_fbit(ZFi) == 0) return;
 		cpu.IP--;
-		goto repe_loop;
+		goto repz_loop;
 	}
 	}
 }
 
 void tick_cpu2() {
-	if (halt) {
-		halt = error_no = 0;
-		return;
-	}
+	if (halt) return;
 
 	LI_i = 0;
 	PC_pre2 = PC_pre1;
@@ -609,140 +664,3 @@ void tick_cpu2() {
 
 // cd c:\"Program Files"\LLVM\bin
 // .\clang.exe C:\Users\abi37\Documents\Projects\8086_6_2D\mainx86.c -O -o C:\Users\abi37\Documents\Projects\8086_6_2D\test.exe
-/*
-int main() {
-	ram = malloc(MB);
-
-	reset_cpu();
-	
-	u32 pc = 0xFFFF0;
-
-	printf("0: exit\n1: step\n2: print cpu\n3: clear\n4: memory\n5: set\n6: PC\n7: push fast\n\n");
-
-	push(0xB9); // Mov
-	push(0x0A);
-	push(0x00);
-
-	push(0xB8); // Mov
-	push(0x01);
-	push(0x00);
-
-	push(0xBA); // Mov
-	push(0x01);
-	push(0x00);
-
-	push(0x01); // Add
-	push(0xD0);
-
-	push(0x01); // Add
-	push(0xC2);
-
-	push(0x49); // Dec
-
-	push(0xE2); // Loop
-	push(0xF9);
-
-	push(0xEB); // End Jmp
-	push(0xFE);
-
-	while (1) {
-		u8 i;
-		putsout("\nEnter: ");
-		scanf("%u", &i);
-		switch (i) {
-		case 0: free(ram); return 0;
-		case 1: tick_cpu(); continue;
-		case 2: print_cpu(); continue;
-		case 3: system("cls"); continue;
-		case 4: {
-			u32 addr;
-			putsout("Addr: 0x");
-			scanf("%x", &addr);
-			print_memory(ram + addr, 64);
-			putchar('\n');
-			continue;
-		}
-		case 5: {
-			u32 addr;
-			u8 x;
-			putsout("Addr: 0x");
-			scanf("%x", &addr);
-			putsout("Value: 0x");
-			scanf("%x", &x);
-			ram[addr] = x;
-			continue;
-		}
-		case 6: printf("PC: %X\n", PC); continue;
-		case 7: {
-			u8 x;
-			putsout("Value: 0x");
-			scanf("%x", &x);
-			push(x);
-			continue;
-		}
-		}
-	}
-
-	free(ram);
-}
-*/
-
-/*
-int main() {
-	ram = malloc(MB);
-
-	reset_cpu();
-
-	u32 pc = 0xFFFF0;
-
-	// cpu.A.x = 17;
-
-	cpu.SP = 4;
-
-	get16(0x0201) = 0;
-	get16(0x0201 + 2) = 1;
-	
-	push(0xFF);
-	push(RM(00, 011, 110));
-	push(1);
-	push(2);
-
-	push(0x40);
-
-	pc = 0x10;
-
-	push(0xCB);
-
-	tick_cpu();
-	tick_cpu();
-	tick_cpu();
-
-	print_cpu();
-	puts("------------------------------------");
-	print_memory(ram, 64);
-
-	// print_reg(cpu.A);
-	// print_regx(*(Reg*)&cpu.flags);
-
-	free(ram);
-
-	cpu.A.x = 0xAA8D;
-	
-	print_reg(cpu.A);
-	print_regx(*(Reg*)&cpu.flags);
-
-	push(0xD1);
-	push(RM(11, 111, 000));
-
-	for (int i = 0; i < 1; i++) {
-		tick_cpu();
-	}
-
-	putchar('\n');
-	print_reg(cpu.A);
-	print_regx(*(Reg*)&cpu.flags);
-
-	// puts("------------------------------------");
-	// print_memory(ram + 0xFFFF0, 64);
-}
-*/
