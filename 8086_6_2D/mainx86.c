@@ -203,26 +203,30 @@ tick_cpu:
 			break;
 		case 0b110: // DIV
 			if (w) {
-				u32 result = cpu.A.x / *(u16*)rm;
-				cpu.A.x = result;
-				cpu.D.x = result >> 16;
-				mod_rm = cpu.D.x != 0;
+				u32 divided = (cpu.D.x << 16) | cpu.A.x;
+				u16 divider = *(u16*)rm;
+				cpu.A.x = divided / divider;
+				cpu.D.x = divided % divider;
 			} else {
-				cpu.A.x = cpu.A.l / *(u8*)rm;
-				mod_rm = cpu.A.h != 0;
+				u16 divided = cpu.A.x;
+				u8 divider = *(u8*)rm;
+				cpu.A.l = divided / divider;
+				cpu.A.h = divided % divider;
 			}
-			break;
+			return;
 		case 0b111: // IDIV
 			if (w) {
-				u32 result = (i16)cpu.A.x / *(i16*)rm;
-				cpu.A.x = result;
-				cpu.D.x = result >> 16;
-				mod_rm = ((((i32)result >> 15) + 1) & -2) == 0;
+				i32 divided = (cpu.D.x << 16) | cpu.A.x;
+				i16 divider = *(u16*)rm;
+				cpu.A.x = divided / divider;
+				cpu.D.x = divided % divider;
 			} else {
-				cpu.A.x = (i8)cpu.A.l * *(i8*)rm;
-				mod_rm = ((((i16)cpu.A.x >> 7) + 1) & -2) == 0;
+				i16 divided = cpu.A.x;
+				i8 divider = *(u8*)rm;
+				cpu.A.l = divided / divider;
+				cpu.A.h = divided % divider;
 			}
-			break;
+			return;
 		}
 		
 		set_fbit(CFi, mod_rm);
