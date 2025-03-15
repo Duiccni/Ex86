@@ -29,9 +29,9 @@ u32 PC_pre1 = 0;
 u32 PC_pre2 = 0;
 
 #define SECTOR_SIZE 512
+#define SECTORS 18
 #define HEADS 2
 #define CYLINDERS 80
-#define SECTORS 18
 
 #define FLOPPY_AMOUNT 1
 u8* floppies[FLOPPY_AMOUNT];
@@ -39,7 +39,7 @@ u8* floppies[FLOPPY_AMOUNT];
 u32 get_floppy_index() {
 	u8 sector = cpu.C.l & 0b111111;
 	u16 cylinder = cpu.C.x >> 6;
-	return ((cpu.D.h * CYLINDERS + cylinder) * SECTORS + sector) * SECTOR_SIZE;
+	return ((HEADS * cylinder + cpu.D.h) * SECTORS + (sector - 1)) * SECTOR_SIZE;
 }
 
 u16 read_sectors_in() {
@@ -314,7 +314,7 @@ tick_cpu:
 		if_error((mod_rm & 0xC0) == 0xC0, ERR_LxS_MOD11);
 		u16 *mem = (u16*)get_mod_rm(mod_rm, 1, seg_or);
 		cpuw[get_modrm_mid(mod_rm)] = mem[0];
-		*(w ? &cpu.DS : &cpu.ES) = mem[1];
+		*(w ? &cpu.DS : &cpu.ES) = mem[1] << 4;
 		return;
 	}
 	case 0xC6: {

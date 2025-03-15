@@ -251,12 +251,12 @@ int WINAPI WinMain(
 // cd c:\"Program Files"\LLVM\bin
 // .\clang.exe C:\Users\abi37\Documents\Projects\8086_6_2D\main.cpp -O -o C:\Users\abi37\Documents\Projects\8086_6_2D\test.exe
 
-	puts("F3: Tick\nF4: Stop Halt\nF5: Dump RAM\nF6: Tick 16 time");
-	halt = 1;
-
 	ram = (u8*)malloc(MB);
 	floppies[0] = (u8*)malloc(HEADS * CYLINDERS * SECTORS * SECTOR_SIZE); // 1440KB
 	// floppies[1] = (u8*)malloc(HEADS * CYLINDERS * SECTORS * SECTOR_SIZE); // 1440KB
+
+	printf("F3: Tick\nF4: Stop Halt\nF5: Dump RAM\nF6: Tick 16 time\nRAM BUFFER: %llx\n", ram);
+	halt = 1;
 
 	reset_cpu();
 	initalize_IO();
@@ -267,7 +267,8 @@ int WINAPI WinMain(
 	load_whole_file("asm/int10h.bin", ram + 0xF0100);
 	load_whole_file("asm/int13h.bin", ram + 0xF0200);
 	load_whole_file("asm/int16h.bin", ram + 0xF0300);
-	load_whole_file("asm/x86BOOT.img", floppies[0]);
+	load_whole_file("asm/drive_table.bin", ram + 0xF0340);
+	load_whole_file("asm/DISK01.IMG", floppies[0]);
 }
 	u32 pc = 0xFFFF0;
 #define push(x) ram[pc++] = x;

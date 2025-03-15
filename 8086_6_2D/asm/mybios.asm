@@ -13,6 +13,9 @@ mov word [0x13 * 4 + 2], 0xF020
 mov word [0x16 * 4], ax						; set INT 16h
 mov word [0x16 * 4 + 2], 0xF030
 
+mov word [0x1E * 4], ax						; set Drive Description Table
+mov word [0x1E * 4 + 2], 0xF034
+
 
 not ah      									; set stack
 mov ss, ax
@@ -20,7 +23,7 @@ mov sp, 0x1000
 
 
 mov ax, 0x0201
-xor cx, cx
+mov cx, 1
 xor dx, dx
 mov bx, 0x7C00
 
