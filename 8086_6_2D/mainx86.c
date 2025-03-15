@@ -496,7 +496,7 @@ tick_cpu:
 		LI_add_name('I','N','C', to_hex(opcode & 0b1111));
 		u8 reg = opcode & 0b111;
 		u16 a = cpuw[reg], b = get_sign16(opcode << 12);
-		u32 c = a + b;
+		u32 c = a + (i16)b;
 		set_arithmetic_flags16(a, b, c);
 		cpuw[reg] = c;
 		return;
