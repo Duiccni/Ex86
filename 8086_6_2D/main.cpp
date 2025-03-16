@@ -62,8 +62,23 @@ LRESULT window_proc(HWND hwnd, UINT u_msg, WPARAM w_param, LPARAM l_param)
 			return 0;
 		}
 		if (w_param == VK_F6) {
-			for (u8 i = 0; i < 0x10; i++)
+			for (u8 i = 0; i < 0x10 && halt == 0 && cpu.CS < 0xF0000; i++)
 				tick_cpu2();
+			return 0;
+		}
+		if (w_param == VK_F7) {
+			last_key_pressed = VK_SPACE;
+			for (u16 i = 0x200; i && cpu.CS >= 0xF0000; i--) {
+				if (halt) halt = 0;
+				tick_cpu2();
+			}
+			return 0;
+		}
+		if (w_param == VK_F8) {
+			for (u16 i = 0x200; i; i--) {
+				if (halt) halt = 0;
+				tick_cpu2();
+			}
 			return 0;
 		}
 
@@ -120,6 +135,10 @@ void print_register(char* name, u16 x, point pos) {
 #define VGA_BL_X 480
 #define VGA_BR_X VGA_BL_X + VGA_Xs
 
+color_t get_color(u8 x) {
+	return ((x << 4) & 0xFF) | ((x >> 4) << 8);
+}
+
 void VGA() {
 	graphics::draw::_straight_line(VGA_BL_X - 1, VGA_BR_X + 1, 29, false, C_white, screen);
 	graphics::draw::_straight_line(VGA_BL_X - 1, VGA_BR_X + 1, 30 + VGA_Ys, false, C_white, screen);
@@ -132,8 +151,7 @@ void VGA() {
 		y -= 2;
 		for (int x = 0; x < VGA_Xs; x += 2, ++px) {
 			point p = {x + VGA_BL_X, y + 30};
-			u8 s = *px;
-			color_t c = s | ((u8)(~s) << 8);
+			color_t c = get_color(*px);
 			graphics::set_sure_pixel(p, c, screen);
 			graphics::set_sure_pixel(p + P(1, 0), c, screen);
 			graphics::set_sure_pixel(p + P(0, 1), c, screen);
@@ -255,12 +273,14 @@ int WINAPI WinMain(
 	floppies[0] = (u8*)malloc(HEADS * CYLINDERS * SECTORS * SECTOR_SIZE); // 1440KB
 	// floppies[1] = (u8*)malloc(HEADS * CYLINDERS * SECTORS * SECTOR_SIZE); // 1440KB
 
-	printf("F3: Tick\nF4: Stop Halt\nF5: Dump RAM\nF6: Tick 16 time\nRAM BUFFER: %llx\n", ram);
+	printf("F3: Tick\nF4: Stop Halt\nF5: Dump RAM\nF6: Tick 16 time\nF7: Tick until bootloader\nRAM BUFFER: %llx\n", ram);
 	halt = 1;
 
 	reset_cpu();
 	initalize_IO();
 	last_inst_buf[0] = 0;
+
+	deassemble_file = fopen("deassemble.txt", "w");
 
 {
 	load_whole_file("asm/mybios.bin", ram + 0xF0000);
@@ -268,7 +288,10 @@ int WINAPI WinMain(
 	load_whole_file("asm/int13h.bin", ram + 0xF0200);
 	load_whole_file("asm/int16h.bin", ram + 0xF0300);
 	load_whole_file("asm/drive_table.bin", ram + 0xF0340);
-	load_whole_file("asm/DISK01.IMG", floppies[0]);
+	load_whole_file("asm/int21h.bin", ram + 0xF0360);
+
+	load_whole_file("asm/floppy.bin", floppies[0]);
+	// load_whole_file("asm/aSMtris.com", floppies[0] + 0x200);
 }
 	u32 pc = 0xFFFF0;
 #define push(x) ram[pc++] = x;
@@ -344,10 +367,17 @@ int WINAPI WinMain(
 				putsout(" \033[0m");
 			}
 
-			u32 st = stack & ~0b111111;
-			if (st >= 0x20) st -= 0x20;
-			printf("\n\n0x%05X:", st);
-			print_memory(ram + st, 0x100, 4);
+			u32 st = stack;
+			addr = st & ~0b111111;
+			if (addr >= 0x20) addr -= 0x20;
+			printf("\n\n0x%05X:", addr);
+			for (int i = 0; i < 0x100; ++i, ++addr) {
+				if ((i & 0b1111) == 0) printf("\n%04X: ", i);
+
+				if (addr == st) putsout("\033[41m");
+				f_print_byte_hex(ram[addr]);
+				putsout(" \033[0m");
+			}
 		}
 
 		StretchDIBits(
@@ -382,6 +412,7 @@ int WINAPI WinMain(
 
 	free(ram);
 	free(floppies[0]);
+	fclose(deassemble_file);
 	// free(floppies[1]);
 
 	free(screen.buffer);

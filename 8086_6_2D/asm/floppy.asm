@@ -1,16 +1,21 @@
 cpu 8086
 
-start:
-   mov cx, 1999
-   mov ah, 0x0E
+loop0:
+   hlt
+   jmp loop0
 
-   loop:
-      mov al, cl
-      and al, 0x0F
-      add al, 0x41
-      int 10h
-      loop loop
-   
-   end:
-      hlt
-      jmp end
+mov ax, 0x100
+mov ds, ax
+mov es, ax
+
+mov ax, 0x0204
+mov cx, 2
+xor dx, dx
+mov bx, 0x100
+
+int 13h
+
+jmp 0x100:0x100
+
+times 510-($-$$) db 0
+dw 0xAA55

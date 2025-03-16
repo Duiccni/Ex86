@@ -194,6 +194,12 @@ inline void LI_add_name(char a, char b, char c, char d=' ') {
 	LI_i += 4 + (d != ' ');
 }
 
+void hex_to_LI(u32 x, u8 c) {
+loop:
+	last_inst_buf[LI_i++] = to_hex((x >> (--c << 2)) & 0b1111);
+	if (c) goto loop;
+}
+
 inline void LI_add_MOD_RM_start(u8 mod, u8 rm, u8 w) {
 	last_inst_buf[LI_i++] = '[';
 	if (mod == 0b11) return;
@@ -206,10 +212,14 @@ inline void LI_add_MOD_RM_start(u8 mod, u8 rm, u8 w) {
 	LI_i += 6;
 }
 
-void hex_to_LI(u32 x, u8 c) {
-loop:
-	last_inst_buf[LI_i++] = to_hex((x >> (--c << 2)) & 0b1111);
-	if (c) goto loop;
+inline void LI_add_MOD_RM_end(u32 addr, u8 w) {
+	last_inst_buf[LI_i++] = ',';
+	hex_to_LI(addr, 6);
+	last_inst_buf[LI_i++] = ',';
+	hex_to_LI(*(u16*)(ram + addr), (w + 1) << 1);
+	last_inst_buf[LI_i] = ']';
+	last_inst_buf[LI_i + 1] = ' ';
+	LI_i += 2;
 }
 
 inline void *get_register(u8 reg, u8 w) {
@@ -243,11 +253,7 @@ void *get_mod_rm(u8 b, u8 w, u8 seg) {
 	if (((seg & 0b100) | EA_BP) == 0b010) seg = SSi;
 	addr += cpus[seg & 0b11];
 
-	last_inst_buf[LI_i++] = ',';
-	hex_to_LI(addr, 6);
-	last_inst_buf[LI_i] = ']';
-	last_inst_buf[LI_i + 1] = ' ';
-	LI_i += 2;
+	LI_add_MOD_RM_end(addr, w);
 	return ram + addr;
 }
 

@@ -44,13 +44,13 @@ u32 get_floppy_index() {
 
 u16 read_sectors_in() {
 	halt = 1;
-	u32 to = cpu.ES + cpu.B.x, from = get_floppy_index();
+	u32 to = cpu.ES + cpu.B.x, from = get_floppy_index(), size = cpu.A.l * SECTOR_SIZE;
 	printf("\nRead from floppy%u:\n From: #%X\n To: #%X\n Size: %u * 512\n", cpu.D.l, from, to, cpu.A.l);
-	if (cpu.D.l >= FLOPPY_AMOUNT) {
+	if (cpu.D.l >= FLOPPY_AMOUNT || from + size >= 1440 * KB || to >= MB) {
 		error_no = ERR_UNK_FLOPPY;
 		return 1;
 	}
-	memcpy(ram + to, floppies[cpu.D.l] + from, cpu.A.l * SECTOR_SIZE);
+	memcpy(ram + to, floppies[cpu.D.l] + from, size);
 	return 0;
 }
 
@@ -62,6 +62,10 @@ u16 get_key_in() {
 	return last_key_pressed;
 }
 
+u16 get_tick_in() {
+	return data::tick;
+}
+
 void initalize_IO() {
 	for (u16 i = 0; i < 0x100; i++) {
 		OUTio[i] = default_out;
@@ -70,9 +74,15 @@ void initalize_IO() {
 
 	INio[0] = get_key_in;
 	INio[1] = read_sectors_in;
+	INio[2] = get_tick_in;
 }
 
 void interrupt(u8 i) {
+	LI_add_name('I','N','T');
+	hex_to_LI(i, 2);
+	last_inst_buf[LI_i++] = ' ';
+	hex_to_LI(cpu.A.h, 2);
+
 	set_fbit(IFi, 0);
 
 	get16(stack - 2) = cpu.flags;
@@ -150,9 +160,12 @@ tick_cpu:
 		return;
 	}
 	case 0xF6: {
-		u8 mod_rm = fetch8;
+		static char* F6_names[] = {"TEST", "nul ", "NOT ", "NEG ", "MUL ", "IMUL", "DIV", "IDIV"};
+		u8 mod_rm = fetch8, mid = get_modrm_mid(mod_rm);
 		void *rm = get_mod_rm(mod_rm, w, seg_or);
-		switch (get_modrm_mid(mod_rm)) {
+		char* name = F6_names[mid];
+		LI_add_name(name[0], name[1], name[2], name[3]);
+		switch (mid) {
 		case 0b000: // TEST
 			if (w) set_logical_flags8(*(u8*)rm & fetch8);
 			else set_logical_flags16(*(u16*)rm & fetch16());
@@ -260,6 +273,8 @@ tick_cpu:
 			return;
 		}
 
+		LI_add_name('C', 'J', 'f', 'e');
+
 		if (C5 & 1) { // INTER CALL/JMP
 			if_error((mod_rm & 0xC0) == 0xC0, ERR_MOD11);
 
@@ -335,6 +350,7 @@ tick_cpu:
 	// 0000 0011
 	switch (opcode & 0xFC) {
 	case 0xA0: {
+		LI_add_name('M','O','V','a');
 		void *to = &cpu.A, *from = cpus[seg_or & 0b11] + fetch16() + ram;
 		if (opcode & 2) XCHG(void*, to, from);
 		if (w) *(u16*)to = *(u16*)from;
@@ -432,6 +448,7 @@ tick_cpu:
 		}
 	}
 	case 0xE0: {
+		LI_add_name('L','O','O','P');
 		cpu.C.x--;
 		cpu.IP++;
 		switch (opcode) {
@@ -453,6 +470,7 @@ tick_cpu:
 		return;
 	case 0xF8: { // CLx, STx
 		u8 F = CIDf[(opcode >> 1) & 0b11];
+		LI_add_name('F',w | '0','L',to_hex(F));
 		set_fbit(F, w);
 		return;
 	}
@@ -589,6 +607,7 @@ tick_cpu:
 		cpu.SP -= 4;
 		get16(stack) = cpu.IP;
 	case 0xEA: { // JMP FAR
+		LI_add_name('C','J','f');
 		u16 IP = fetch16();
 		cpu.CS = fetch16() << 4;
 		cpu.IP = IP;
@@ -648,6 +667,8 @@ tick_cpu:
 	}
 }
 
+FILE* deassemble_file;
+
 void tick_cpu2() {
 	if (halt) return;
 
@@ -661,6 +682,7 @@ void tick_cpu2() {
 		printf("\nError: %u\n", error_no);
 	}
 	last_inst_buf[LI_i] = 0;
+	fprintf(deassemble_file, "%s\n", last_inst_buf);
 }
 
 #define push(x) ram[pc++] = x;

@@ -2,7 +2,8 @@ C:\Users\abi37\AppData\Local\bin\NASM\nasm.exe asm\mybios.asm -o asm\mybios.bin 
 C:\Users\abi37\AppData\Local\bin\NASM\nasm.exe asm\int16h.asm -o asm\int16h.bin -f bin
 C:\Users\abi37\AppData\Local\bin\NASM\nasm.exe asm\int13h.asm -o asm\int13h.bin -f bin
 C:\Users\abi37\AppData\Local\bin\NASM\nasm.exe asm\int10h.asm -o asm\int10h.bin -f bin
-:: C:\Users\abi37\AppData\Local\bin\NASM\nasm.exe asm\floppy.asm -o asm\floppy.bin -f bin
+C:\Users\abi37\AppData\Local\bin\NASM\nasm.exe asm\int21h.asm -o asm\int21h.bin -f bin
+C:\Users\abi37\AppData\Local\bin\NASM\nasm.exe asm\floppy.asm -o asm\floppy.bin -f bin
 C:\Users\abi37\AppData\Local\bin\NASM\nasm.exe asm\drive_table.asm -o asm\drive_table.bin -f bin
 
 cd C:\"Program Files"\LLVM\bin
