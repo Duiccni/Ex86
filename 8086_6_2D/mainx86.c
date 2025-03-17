@@ -36,16 +36,17 @@ u32 PC_pre2 = 0;
 #define FLOPPY_AMOUNT 1
 u8* floppies[FLOPPY_AMOUNT];
 
-u32 get_floppy_index() {
-	u8 sector = cpu.C.l & 0b111111;
-	u16 cylinder = cpu.C.x >> 6;
-	return ((HEADS * cylinder + cpu.D.h) * SECTORS + (sector - 1)) * SECTOR_SIZE;
+u16 get_floppy_sector() {
+	u8 sector = cpu.C.l & ~0xC0;
+	u16 cylinder = cpu.C.h | ((cpu.C.l & 0xC0) << 8);;
+	return (HEADS * cylinder + cpu.D.h) * SECTORS + (sector - 1);
 }
 
 u16 read_sectors_in() {
 	halt = 1;
-	u32 to = cpu.ES + cpu.B.x, from = get_floppy_index(), size = cpu.A.l * SECTOR_SIZE;
-	printf("\nRead from floppy%u:\n From: #%X\n To: #%X\n Size: %u * 512\n", cpu.D.l, from, to, cpu.A.l);
+	u32 to = cpu.ES + cpu.B.x, from = get_floppy_sector(), size = cpu.A.l * SECTOR_SIZE;
+	printf("\nRead from floppy%u:\n From: #%X * 512\n To: %X:%X\n Size: %u * 512\n", cpu.D.l, from, cpu.ES, cpu.B.x, cpu.A.l);
+	from *= SECTOR_SIZE;
 	if (cpu.D.l >= FLOPPY_AMOUNT || from + size >= 1440 * KB || to >= MB) {
 		error_no = ERR_UNK_FLOPPY;
 		return 1;
