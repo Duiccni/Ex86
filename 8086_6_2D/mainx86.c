@@ -168,8 +168,8 @@ tick_cpu:
 		LI_add_name(name[0], name[1], name[2], name[3]);
 		switch (mid) {
 		case 0b000: // TEST
-			if (w) set_logical_flags8(*(u8*)rm & fetch8);
-			else set_logical_flags16(*(u16*)rm & fetch16());
+			if (w) set_logical_flags8(*(u16*)rm & fetch16());
+			else set_logical_flags16(*(u8*)rm & fetch8);
 			return;
 		case 0b001: error_no = ERR_UNUSED; return;
 		case 0b010: // NOT
