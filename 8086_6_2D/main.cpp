@@ -19,6 +19,7 @@ void dump_ram() {
 	fclose(binary);
 }
 
+u32 marked_pc = 0;
 LRESULT window_proc(HWND hwnd, UINT u_msg, WPARAM w_param, LPARAM l_param)
 {
 	switch (u_msg)
@@ -49,6 +50,19 @@ LRESULT window_proc(HWND hwnd, UINT u_msg, WPARAM w_param, LPARAM l_param)
 		data::mouse.right = false;
 		return 0;
 	case WM_KEYDOWN:
+		if (w_param == VK_F1) {
+			if (PC - marked_pc < 5) {
+				printf("MARKED PC ARRIVED: %x\n", marked_pc);
+				halt = 1;
+				return 0;
+			}
+			tick_cpu2();
+			return 0;
+		}
+		if (w_param == VK_F2) {
+			marked_pc = PC_pre1;
+			return 0;
+		}
 		if (w_param == VK_F3) {
 			tick_cpu2();
 			return 0;
@@ -76,6 +90,14 @@ LRESULT window_proc(HWND hwnd, UINT u_msg, WPARAM w_param, LPARAM l_param)
 		}
 		if (w_param == VK_F8) {
 			for (u16 i = 0x200; i; i--) {
+				if (halt) halt = 0;
+				tick_cpu2();
+			}
+			return 0;
+		}
+		if (w_param == VK_F9) {
+			last_key_pressed = VK_SPACE;
+			for (u16 i = 0x200; i && cpu.CS == 0 && cpu.IP - 0x7C00 < 0x200u; i--) {
 				if (halt) halt = 0;
 				tick_cpu2();
 			}
@@ -270,7 +292,7 @@ int WINAPI WinMain(
 // .\clang.exe C:\Users\abi37\Documents\Projects\8086_6_2D\main.cpp -O -o C:\Users\abi37\Documents\Projects\8086_6_2D\test.exe
 
 	ram = (u8*)malloc(MB);
-	floppies[0] = (u8*)malloc(HEADS * CYLINDERS * SECTORS * SECTOR_SIZE); // 1440KB
+	floppies[0] = (u8*)calloc(HEADS * CYLINDERS * SECTORS, SECTOR_SIZE); // 1440KB
 	// floppies[1] = (u8*)malloc(HEADS * CYLINDERS * SECTORS * SECTOR_SIZE); // 1440KB
 
 	printf("F3: Tick\nF4: Stop Halt\nF5: Dump RAM\nF6: Tick 16 time\nF7: Tick until bootloader\nRAM BUFFER: %llx\n", ram);
@@ -283,15 +305,22 @@ int WINAPI WinMain(
 	deassemble_file = fopen("deassemble.txt", "w");
 
 {
-	load_whole_file("asm/mybios.bin", ram + 0xF0000);
-	load_whole_file("asm/int10h.bin", ram + 0xF0100);
-	load_whole_file("asm/int13h.bin", ram + 0xF0200);
-	load_whole_file("asm/int16h.bin", ram + 0xF0300);
-	load_whole_file("asm/drive_table.bin", ram + 0xF0340);
-	load_whole_file("asm/int21h.bin", ram + 0xF0360);
+	load_whole_file("bin/mybios.bin", ram + 0xF0000);
+	load_whole_file("bin/int10h.bin", ram + 0xF0100);
+	load_whole_file("bin/int13h.bin", ram + 0xF0200);
+	load_whole_file("bin/int16h.bin", ram + 0xF0300);
 
-	load_whole_file("asm/floppy.bin", floppies[0]);
-	// load_whole_file("asm/aSMtris.com", floppies[0] + 0x200);
+	load_whole_file("bin/bootloader.bin", floppies[0]);
+	// load_whole_file("bin/apptable.bin", floppies[0] + SECTOR_SIZE);
+	// load_whole_file("bin/INIT1.bin", floppies[0] + SECTOR_SIZE * 2);
+	// load_whole_file("bin/FUN2.bin", floppies[0] + SECTOR_SIZE * 3);
+
+	// FILE *binary = fopen("FLOPPY.bin","wb");
+	// fwrite(floppies[0], 1, 1440 * KB, binary);
+	// fclose(binary);
+
+	// load_whole_file("bin/drive_table.bin", ram + 0xF0340);
+	// load_whole_file("Disk1.img", floppies[0]);
 }
 	u32 pc = 0xFFFF0;
 #define push(x) ram[pc++] = x;
