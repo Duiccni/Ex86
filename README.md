@@ -1,12 +1,15 @@
 # Ex86
 Mine x86 emulator written in C combined with my old C++ Graphic library
 
+- F1: Tick (stop on mark)
+- F2: Mark CS:IP
 - F3: Tick
 - F4: clear halt
 - F5: dump ram
 - F6: tick 0x10 times (outside bios part (0xF000:0000-0xFFFF:0000))
 - F7: tick until gets out of bios part
 - F8: tick 0x100 times and ignore halt instruction
+- F9: Tick if 0x7C00 + 512 > CS:IP > 0x7C00
   
 Files:
 - Main File: main.cpp
