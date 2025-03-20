@@ -310,7 +310,7 @@ int WINAPI WinMain(
 	load_whole_file("bin/int13h.bin", ram + 0xF0200);
 	load_whole_file("bin/int16h.bin", ram + 0xF0300);
 
-	load_whole_file("bin/bootloader.bin", floppies[0]);
+	// load_whole_file("bin/bootloader.bin", floppies[0]);
 	// load_whole_file("bin/apptable.bin", floppies[0] + SECTOR_SIZE);
 	// load_whole_file("bin/INIT1.bin", floppies[0] + SECTOR_SIZE * 2);
 	// load_whole_file("bin/FUN2.bin", floppies[0] + SECTOR_SIZE * 3);
