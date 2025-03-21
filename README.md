@@ -17,6 +17,7 @@ Files:
 
 #### EXPLORER3.APP
 ![image](https://github.com/user-attachments/assets/820904f6-0b6a-4aba-9ba9-4f18c83ec8c8)
+![image](https://github.com/user-attachments/assets/54fc064a-51cb-4564-815f-e1d1621f340a)
 
 ![image](https://github.com/user-attachments/assets/3abd16f2-2c40-4a64-87ce-58c7205a5626)
 
