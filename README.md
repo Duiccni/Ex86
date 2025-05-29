@@ -15,6 +15,9 @@ Files:
 - Main File: main.cpp
 - Main x86 emulator File: mainx86.c
 
+https://www.reddit.com/r/Assembly_language/comments/1jfozql/i_am_so_proud_of_this_code/
+https://www.reddit.com/r/Assembly_language/comments/1jkr298/i_made_a_random_number_generator/
+
 ### EXPLORER3.APP
 #### Running in Ex86
 ![image](https://github.com/user-attachments/assets/820904f6-0b6a-4aba-9ba9-4f18c83ec8c8)
